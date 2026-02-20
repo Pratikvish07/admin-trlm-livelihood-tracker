@@ -1,0 +1,40 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gov-blue: #0b3faf;
+  --gov-cyan: #0ea5e9;
+  --gov-surface: #f1f5f9;
+}
+
+body {
+  @apply bg-slate-100 text-slate-800;
+  background-image: radial-gradient(circle at 20% 0%, rgba(14, 165, 233, 0.07), transparent 25%),
+    radial-gradient(circle at 80% 10%, rgba(11, 63, 175, 0.09), transparent 30%);
+  min-height: 100vh;
+}
+
+.portal-card {
+  @apply bg-white border border-slate-200 rounded-2xl shadow-sm;
+}
+
+.portal-title {
+  @apply text-2xl md:text-3xl font-black text-slate-900;
+}
+
+.portal-subtitle {
+  @apply text-sm text-slate-500;
+}
+
+.portal-btn {
+  @apply rounded-xl px-4 py-2 text-sm font-semibold transition;
+}
+
+.portal-btn-primary {
+  @apply portal-btn bg-[var(--gov-blue)] text-white hover:bg-blue-800;
+}
+
+.portal-btn-outline {
+  @apply portal-btn border border-slate-300 bg-white hover:bg-slate-50;
+}
