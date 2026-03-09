@@ -9,7 +9,9 @@ export default function UserManagementPage() {
     name: '',
     shgCode: '',
     shgName: '',
+    districtId: '',
     district: '',
+    blockId: '',
     block: '',
     gpVc: '',
     village: '',
@@ -28,6 +30,10 @@ export default function UserManagementPage() {
   const [editingId, setEditingId] = useState('');
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState('');
+  const [districts, setDistricts] = useState([]);
+  const [blocks, setBlocks] = useState([]);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
 
   const managedLevel = useMemo(() => {
     if (role === 'BLOCK_ADMIN') return 'CRP';
@@ -37,7 +43,6 @@ export default function UserManagementPage() {
   }, [role]);
 
   const idPrefix = managedLevel === 'CRP' ? 'CRP' : managedLevel === 'BLOCK_ADMIN' ? 'BLK' : 'DIST';
-
   const load = async () => {
     if (!managedLevel) return;
     setBusy(true);
@@ -49,6 +54,48 @@ export default function UserManagementPage() {
   useEffect(() => {
     load();
   }, [managedLevel]);
+
+  useEffect(() => {
+    let active = true;
+    const loadDistricts = async () => {
+      setLoadingDistricts(true);
+      const data = await api.getDistricts();
+      if (active) setDistricts(data);
+      setLoadingDistricts(false);
+    };
+    loadDistricts();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadBlocks = async () => {
+      if (!form.districtId) {
+        setBlocks([]);
+        return;
+      }
+      setLoadingBlocks(true);
+      const data = await api.getBlocksByDistrict(form.districtId);
+      if (active) setBlocks(data);
+      setLoadingBlocks(false);
+    };
+    loadBlocks();
+    return () => {
+      active = false;
+    };
+  }, [form.districtId]);
+
+  useEffect(() => {
+    if (!blocks.length || !form.block) return;
+    const matchedBlock = blocks.find(
+      (b) => String(b.blockName || '').toLowerCase() === String(form.block || '').toLowerCase(),
+    );
+    if (matchedBlock && String(form.blockId) !== String(matchedBlock.blockId)) {
+      setForm((prev) => ({ ...prev, blockId: String(matchedBlock.blockId) }));
+    }
+  }, [blocks, form.block, form.blockId]);
 
   const submit = async () => {
     if (!form.name.trim() || !form.shgName.trim() || !form.block.trim()) return;
@@ -65,7 +112,9 @@ export default function UserManagementPage() {
       name: '',
       shgCode: '',
       shgName: '',
+      districtId: '',
       district: '',
+      blockId: '',
       block: '',
       gpVc: '',
       village: '',
@@ -93,12 +142,17 @@ export default function UserManagementPage() {
   };
 
   const edit = (row) => {
+    const districtMatch = districts.find(
+      (d) => String(d.districtName || '').toLowerCase() === String(row.district || '').toLowerCase(),
+    );
     setEditingId(row.id);
     setForm({
       name: row.name || '',
       shgCode: row.shgCode || '',
       shgName: row.shgName || '',
+      districtId: districtMatch ? String(districtMatch.districtId) : '',
       district: row.district || '',
+      blockId: '',
       block: row.block || '',
       gpVc: row.gpVc || '',
       village: row.village || '',
@@ -125,6 +179,26 @@ export default function UserManagementPage() {
 
   const setValue = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
+  const onDistrictChange = (districtId) => {
+    const selectedDistrict = districts.find((d) => String(d.districtId) === String(districtId));
+    setForm((prev) => ({
+      ...prev,
+      districtId,
+      district: selectedDistrict?.districtName || '',
+      blockId: '',
+      block: '',
+    }));
+  };
+
+  const onBlockChange = (blockId) => {
+    const selectedBlock = blocks.find((b) => String(b.blockId) === String(blockId));
+    setForm((prev) => ({
+      ...prev,
+      blockId,
+      block: selectedBlock?.blockName || '',
+    }));
+  };
+
   return (
     <div className="space-y-4">
       <div>
@@ -140,8 +214,27 @@ export default function UserManagementPage() {
           <input className="border rounded-xl p-2.5" placeholder="SHG Name*" value={form.shgName} onChange={(e) => setValue('shgName', e.target.value)} />
           <input className="border rounded-xl p-2.5 bg-slate-100" value={managedLevel} disabled />
 
-          <input className="border rounded-xl p-2.5" placeholder="District" value={form.district} onChange={(e) => setValue('district', e.target.value)} />
-          <input className="border rounded-xl p-2.5" placeholder="Block*" value={form.block} onChange={(e) => setValue('block', e.target.value)} />
+          <select
+            className="border rounded-xl p-2.5"
+            value={form.districtId}
+            onChange={(e) => onDistrictChange(e.target.value)}>
+            <option value="">{loadingDistricts ? 'Loading districts...' : 'Select District'}</option>
+            {districts.map((d) => (
+              <option key={d.districtId} value={d.districtId}>{d.districtName}</option>
+            ))}
+          </select>
+          <select
+            className="border rounded-xl p-2.5"
+            value={form.blockId}
+            onChange={(e) => onBlockChange(e.target.value)}
+            disabled={!form.districtId || loadingBlocks}>
+            <option value="">
+              {!form.districtId ? 'Select district first' : loadingBlocks ? 'Loading blocks...' : 'Select Block*'}
+            </option>
+            {blocks.map((b) => (
+              <option key={b.blockId} value={b.blockId}>{b.blockName}</option>
+            ))}
+          </select>
           <input className="border rounded-xl p-2.5" placeholder="GP/VC" value={form.gpVc} onChange={(e) => setValue('gpVc', e.target.value)} />
           <input className="border rounded-xl p-2.5" placeholder="Village" value={form.village} onChange={(e) => setValue('village', e.target.value)} />
 

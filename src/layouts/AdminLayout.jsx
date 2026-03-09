@@ -3,19 +3,26 @@ import { useDispatch, useSelector } from 'react-redux';
 import { logout } from '../store/slices/authSlice';
 
 const links = [
-  { to: '/admin/dashboard', label: 'Dashboard' },
-  { to: '/admin/user-management', label: 'User Management' },
-  { to: '/admin/geography-master', label: 'Geography Master' },
-  { to: '/admin/loan-master', label: 'Loan Master' },
-  { to: '/admin/analytics', label: 'Analytics' },
-  { to: '/admin/dbt-tracking', label: 'DBT Tracking' },
-  { to: '/admin/reports', label: 'Reports' },
+  { to: '/admin/dashboard', label: 'Dashboard', permission: ['view_dashboard'] },
+  { to: '/admin/user-management', label: 'User Management', permission: ['manage_district', 'manage_block'] },
+  { to: '/admin/admin-approval', label: 'Admin Approval', permission: ['approve_users'] },
+  { to: '/admin/geography-master', label: 'Geography Master', permission: ['full_access'] },
+  { to: '/admin/loan-master', label: 'Loan Master', permission: ['full_access', 'manage_district'] },
+  { to: '/admin/analytics', label: 'Analytics', permission: ['full_access', 'manage_district'] },
+  { to: '/admin/dbt-tracking', label: 'DBT Tracking', permission: ['full_access', 'manage_district', 'manage_block'] },
+  { to: '/admin/reports', label: 'Reports', permission: ['view_reports'] },
 ];
 
 export default function AdminLayout() {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const user = useSelector((state) => state.auth.user);
+
+  const filteredLinks = links.filter((link) => {
+    if (!link.permission) return true;
+    if (!user?.permissions) return false;
+    return link.permission.some((p) => user.permissions.includes(p));
+  });
 
   const onLogout = () => {
     dispatch(logout());
@@ -31,11 +38,13 @@ export default function AdminLayout() {
         <div className="relative mb-6">
           <p className="text-xs tracking-[0.18em] uppercase text-cyan-200">Tripura State Project</p>
           <h1 className="text-3xl font-black mt-2">TRLM Admin Portal</h1>
-          <p className="text-xs text-slate-300 mt-2">{user?.name} ({user?.role})</p>
+          <p className="text-xs text-slate-300 mt-2">{user?.name} ({user?.apiRole || user?.role})</p>
+          {user?.district ? <p className="text-[11px] text-slate-400 mt-1">District: {user.district}</p> : null}
+          {user?.block ? <p className="text-[11px] text-slate-400">Block: {user.block}</p> : null}
         </div>
 
         <nav className="space-y-2 relative">
-          {links.map((link) => (
+          {filteredLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}

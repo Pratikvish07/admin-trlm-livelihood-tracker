@@ -5,12 +5,6 @@ const roleConfig = {
   BLOCK_ADMIN: {
     title: 'Block Operations Dashboard',
     subtitle: 'Tripura Rural Livelihood Mission - Block-level execution and verification status.',
-    kpis: [
-      ['CRP Pending Approval', '27'],
-      ['Approved CRP', '68'],
-      ['SHG Data Updated', '214'],
-      ['Reports Ready', '31'],
-    ],
     quick: [
       { to: '/admin/user-management', label: 'Manage CRP', desc: 'Create, update and approve CRP profiles in this block' },
       { to: '/admin/dbt-tracking', label: 'DBT Verification', desc: 'Check beneficiary status and resolve pending cases' },
@@ -21,12 +15,6 @@ const roleConfig = {
   DISTRICT_ADMIN: {
     title: 'District Monitoring Dashboard',
     subtitle: 'Tripura Rural Livelihood Mission - District supervision across all blocks.',
-    kpis: [
-      ['Block Admin Active', '12'],
-      ['CRP Pending', '74'],
-      ['District Reports', '53'],
-      ['DBT Cases Cleared', '418'],
-    ],
     quick: [
       { to: '/admin/user-management', label: 'Manage Block Admins', desc: 'Create/update/delete block-level administrators' },
       { to: '/admin/geography-master', label: 'District Geography', desc: 'Maintain block, GP and village master data' },
@@ -37,12 +25,6 @@ const roleConfig = {
   STATE_ADMIN: {
     title: 'State Governance Dashboard',
     subtitle: 'Tripura Rural Livelihood Mission - State command center for district performance.',
-    kpis: [
-      ['District Admins', '8'],
-      ['Block Admins', '42'],
-      ['CRP Pending', '126'],
-      ['State Reports Ready', '96'],
-    ],
     quick: [
       { to: '/admin/user-management', label: 'Manage District Admins', desc: 'Create/update/delete district-level admins' },
       { to: '/admin/analytics', label: 'State Analytics', desc: 'State-wide dashboards for strategy and monitoring' },
@@ -53,12 +35,6 @@ const roleConfig = {
   HIGH_AUTHORITY: {
     title: 'High Authority Dashboard',
     subtitle: 'Tripura Rural Livelihood Mission - Executive review and strategic oversight.',
-    kpis: [
-      ['State Progress Index', '8.4/10'],
-      ['Districts Reviewed', '8'],
-      ['Policy Alerts', '5'],
-      ['Audit Reports', '12'],
-    ],
     quick: [
       { to: '/admin/analytics', label: 'Strategic Analytics', desc: 'High-level trend intelligence and exceptions' },
       { to: '/admin/reports', label: 'Executive Reports', desc: 'Governance reports for policy and review meetings' },
@@ -80,13 +56,10 @@ export default function DashboardPage() {
         <p className="text-blue-100 mt-2 text-sm">{cfg.subtitle}</p>
       </div>
 
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        {cfg.kpis.map(([label, value]) => (
-          <div key={label} className="portal-card p-4">
-            <p className="text-sm text-slate-500">{label}</p>
-            <p className="text-3xl font-extrabold text-brand mt-1">{value}</p>
-          </div>
-        ))}
+      <div className="portal-card p-4">
+        <p className="text-sm text-slate-600">
+          No static KPI numbers are shown. Live KPI data will appear here once backend analytics endpoints are connected.
+        </p>
       </div>
 
       <div className="portal-card p-5">

@@ -1,10 +1,7 @@
 import { useMemo, useState } from 'react';
 
 export default function LoanMasterPage() {
-  const [rows, setRows] = useState([
-    { id: 'LOAN-1', product: 'SHG Livelihood Loan', rate: 12, grace: 2, tenure: 12 },
-    { id: 'LOAN-2', product: 'Enterprise Loan', rate: 10, grace: 1, tenure: 24 },
-  ]);
+  const [rows, setRows] = useState([]);
   const [form, setForm] = useState({ product: '', rate: '', grace: '', tenure: '' });
   const [editingId, setEditingId] = useState('');
 

@@ -9,6 +9,8 @@ import AnalyticsPage from '../pages/AnalyticsPage';
 import DBTTrackingPage from '../pages/DBTTrackingPage';
 import ReportsPage from '../pages/ReportsPage';
 import LoginPage from '../pages/LoginPage';
+import SignUpPage from '../pages/SignUpPage';
+import AdminApprovalPage from '../pages/AdminApprovalPage';
 
 const PrivateRoute = ({ children }) => {
   const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
@@ -20,6 +22,7 @@ export default function AppRoutes() {
     <Routes>
       <Route path="/" element={<Navigate to="/admin/dashboard" replace />} />
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignUpPage />} />
 
       <Route
         path="/admin"
@@ -30,6 +33,7 @@ export default function AppRoutes() {
         }>
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="user-management" element={<UserManagementPage />} />
+        <Route path="admin-approval" element={<AdminApprovalPage />} />
         <Route path="geography-master" element={<GeographyMasterPage />} />
         <Route path="loan-master" element={<LoanMasterPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />

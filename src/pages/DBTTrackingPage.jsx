@@ -1,13 +1,7 @@
 import { useMemo, useState } from 'react';
 
-const seed = [
-  { id: 'DBT-1', beneficiary: 'Mina Debbarma', scheme: 'Livelihood Support', amount: 5000, status: 'Pending' },
-  { id: 'DBT-2', beneficiary: 'Purnima Das', scheme: 'Enterprise Grant', amount: 12000, status: 'Approved' },
-  { id: 'DBT-3', beneficiary: 'Anita Paul', scheme: 'Loan Subsidy', amount: 7000, status: 'Rejected' },
-];
-
 export default function DBTTrackingPage() {
-  const [rows, setRows] = useState(seed);
+  const [rows, setRows] = useState([]);
 
   const grouped = useMemo(() => ({
     Pending: rows.filter((r) => r.status === 'Pending'),

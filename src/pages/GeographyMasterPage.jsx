@@ -1,42 +1,14 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
 
 export default function GeographyMasterPage() {
-  const [rows, setRows] = useState([
-    {
-      id: 'TRK-1001',
-      shgMemberName: 'Mina Debbarma',
-      shgName: 'Shakti SHG',
-      district: 'West Tripura',
-      block: 'Mohanpur',
-      gp: 'GP-01',
-      village: 'Village A',
-      latitude: '23.8315',
-      longitude: '91.2868',
-      markStatus: 'Marked',
-      tracingStatus: 'In Range',
-      lastTrackedAt: '2026-02-17 11:40',
-      source: 'Mobile App',
-    },
-    {
-      id: 'TRK-1002',
-      shgMemberName: 'Purnima Das',
-      shgName: 'Jagruti SHG',
-      district: 'Sepahijala',
-      block: 'Bishalgarh',
-      gp: 'GP-02',
-      village: 'Village B',
-      latitude: '23.9170',
-      longitude: '91.3851',
-      markStatus: 'Pending',
-      tracingStatus: 'Out of Range',
-      lastTrackedAt: '2026-02-17 10:15',
-      source: 'Mobile App',
-    },
-  ]);
+  const [rows, setRows] = useState([]);
   const [form, setForm] = useState({
     shgMemberName: '',
     shgName: '',
+    districtId: '',
     district: '',
+    blockId: '',
     block: '',
     gp: '',
     village: '',
@@ -49,6 +21,10 @@ export default function GeographyMasterPage() {
   });
   const [editingId, setEditingId] = useState('');
   const [query, setQuery] = useState('');
+  const [districts, setDistricts] = useState([]);
+  const [blocks, setBlocks] = useState([]);
+  const [loadingDistricts, setLoadingDistricts] = useState(false);
+  const [loadingBlocks, setLoadingBlocks] = useState(false);
 
   const visible = useMemo(() => {
     const q = query.toLowerCase().trim();
@@ -61,6 +37,68 @@ export default function GeographyMasterPage() {
   }, [query, rows]);
 
   const setValue = (key, value) => setForm((p) => ({ ...p, [key]: value }));
+
+  useEffect(() => {
+    let active = true;
+    const loadDistricts = async () => {
+      setLoadingDistricts(true);
+      const data = await api.getDistricts();
+      if (active) setDistricts(data);
+      setLoadingDistricts(false);
+    };
+    loadDistricts();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadBlocks = async () => {
+      if (!form.districtId) {
+        setBlocks([]);
+        return;
+      }
+      setLoadingBlocks(true);
+      const data = await api.getBlocksByDistrict(form.districtId);
+      if (active) setBlocks(data);
+      setLoadingBlocks(false);
+    };
+    loadBlocks();
+    return () => {
+      active = false;
+    };
+  }, [form.districtId]);
+
+  useEffect(() => {
+    if (!blocks.length || !form.block) return;
+    const matchedBlock = blocks.find(
+      (b) => String(b.blockName || '').toLowerCase() === String(form.block || '').toLowerCase(),
+    );
+    if (matchedBlock && String(form.blockId) !== String(matchedBlock.blockId)) {
+      setForm((prev) => ({ ...prev, blockId: String(matchedBlock.blockId) }));
+    }
+  }, [blocks, form.block, form.blockId]);
+
+  const onDistrictChange = (districtId) => {
+    const selectedDistrict = districts.find((d) => String(d.districtId) === String(districtId));
+    setForm((p) => ({
+      ...p,
+      districtId,
+      district: selectedDistrict?.districtName || '',
+      blockId: '',
+      block: '',
+    }));
+  };
+
+  const onBlockChange = (blockId) => {
+    const selectedBlock = blocks.find((b) => String(b.blockId) === String(blockId));
+    setForm((p) => ({
+      ...p,
+      blockId,
+      block: selectedBlock?.blockName || '',
+    }));
+  };
 
   const onSubmit = () => {
     if (!form.shgMemberName || !form.shgName || !form.block || !form.latitude || !form.longitude) return;
@@ -78,7 +116,9 @@ export default function GeographyMasterPage() {
     setForm({
       shgMemberName: '',
       shgName: '',
+      districtId: '',
       district: '',
+      blockId: '',
       block: '',
       gp: '',
       village: '',
@@ -93,10 +133,15 @@ export default function GeographyMasterPage() {
 
   const onEdit = (row) => {
     setEditingId(row.id);
+    const districtMatch = districts.find(
+      (d) => String(d.districtName || '').toLowerCase() === String(row.district || '').toLowerCase(),
+    );
     setForm({
       shgMemberName: row.shgMemberName,
       shgName: row.shgName,
+      districtId: districtMatch ? String(districtMatch.districtId) : '',
       district: row.district,
+      blockId: '',
       block: row.block,
       gp: row.gp,
       village: row.village,
@@ -125,8 +170,27 @@ export default function GeographyMasterPage() {
         <div className="grid md:grid-cols-4 gap-3">
           <input className="border rounded-xl p-2.5" placeholder="SHG Member Name*" value={form.shgMemberName} onChange={(e) => setValue('shgMemberName', e.target.value)} />
           <input className="border rounded-xl p-2.5" placeholder="SHG Name*" value={form.shgName} onChange={(e) => setValue('shgName', e.target.value)} />
-          <input className="border rounded-xl p-2.5" placeholder="District" value={form.district} onChange={(e) => setValue('district', e.target.value)} />
-          <input className="border rounded-xl p-2.5" placeholder="Block*" value={form.block} onChange={(e) => setValue('block', e.target.value)} />
+          <select
+            className="border rounded-xl p-2.5"
+            value={form.districtId}
+            onChange={(e) => onDistrictChange(e.target.value)}>
+            <option value="">{loadingDistricts ? 'Loading districts...' : 'Select District'}</option>
+            {districts.map((d) => (
+              <option key={d.districtId} value={d.districtId}>{d.districtName}</option>
+            ))}
+          </select>
+          <select
+            className="border rounded-xl p-2.5"
+            value={form.blockId}
+            onChange={(e) => onBlockChange(e.target.value)}
+            disabled={!form.districtId || loadingBlocks}>
+            <option value="">
+              {!form.districtId ? 'Select district first' : loadingBlocks ? 'Loading blocks...' : 'Select Block*'}
+            </option>
+            {blocks.map((b) => (
+              <option key={b.blockId} value={b.blockId}>{b.blockName}</option>
+            ))}
+          </select>
 
           <input className="border rounded-xl p-2.5" placeholder="GP/VC" value={form.gp} onChange={(e) => setValue('gp', e.target.value)} />
           <input className="border rounded-xl p-2.5" placeholder="Village" value={form.village} onChange={(e) => setValue('village', e.target.value)} />
