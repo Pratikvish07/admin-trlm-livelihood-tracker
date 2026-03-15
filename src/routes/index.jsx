@@ -9,6 +9,7 @@ import AnalyticsPage from '../pages/AnalyticsPage';
 import DBTTrackingPage from '../pages/DBTTrackingPage';
 import ReportsPage from '../pages/ReportsPage';
 import LoginPage from '../pages/LoginPage';
+import AllAdminStaffPage from '../pages/AllAdminStaffPage';
 
 const PrivateRoute = ({ children }) => {
   const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
@@ -35,6 +36,7 @@ export default function AppRoutes() {
         <Route path="analytics" element={<AnalyticsPage />} />
         <Route path="dbt-tracking" element={<DBTTrackingPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="all-admin-staff" element={<AllAdminStaffPage />} />
       </Route>
     </Routes>
   );
