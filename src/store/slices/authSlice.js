@@ -1,5 +1,6 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import { api, setAuthToken, clearAuthToken, getAuthToken } from '../../services/api';
+import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import { api, clearAuthToken, getAuthToken, setAuthToken } from '../../services/api';
+import { clearStoredAuth, getStoredAuth, loginAdmin, saveAuth } from '../../services/auth';
 
 const AUTH_WORKFLOW_KEY = 'trlm_auth_workflow_v1';
 const AUTH_SESSION_KEY = 'trlm_auth_session_v1';
@@ -8,6 +9,7 @@ const loadWorkflowState = () => {
   if (typeof window === 'undefined') {
     return { pendingRegistrations: [], registeredUsers: [] };
   }
+
   try {
     const raw = window.localStorage.getItem(AUTH_WORKFLOW_KEY);
     if (!raw) return { pendingRegistrations: [], registeredUsers: [] };
@@ -23,13 +25,14 @@ const loadWorkflowState = () => {
 
 const persistWorkflowState = (state) => {
   if (typeof window === 'undefined') return;
+
   try {
     window.localStorage.setItem(
       AUTH_WORKFLOW_KEY,
       JSON.stringify({
         pendingRegistrations: state.pendingRegistrations,
         registeredUsers: state.registeredUsers,
-      }),
+      })
     );
   } catch {
     // Ignore storage errors.
@@ -37,9 +40,18 @@ const persistWorkflowState = (state) => {
 };
 
 const loadAuthSession = () => {
-  if (typeof window === 'undefined') {
-    return { token: null, user: null };
+  const storedAuth = getStoredAuth();
+  if (storedAuth?.token) {
+    return {
+      token: storedAuth.token,
+      user: storedAuth.user || null,
+    };
   }
+
+  if (typeof window === 'undefined') {
+    return { token: getAuthToken(), user: null };
+  }
+
   try {
     const raw = window.localStorage.getItem(AUTH_SESSION_KEY);
     if (!raw) return { token: getAuthToken(), user: null };
@@ -55,6 +67,7 @@ const loadAuthSession = () => {
 
 const persistAuthSession = (token, user) => {
   if (typeof window === 'undefined') return;
+
   try {
     if (!token || !user) {
       window.localStorage.removeItem(AUTH_SESSION_KEY);
@@ -89,10 +102,26 @@ const buildPermissions = (role, rawApiRole) => {
   if (role === 'DISTRICT_ADMIN') {
     return ['view_dashboard', 'manage_block', 'view_reports'];
   }
-  if (role === 'BLOCK_STAFF') {
-    return ['view_dashboard'];
+  if (role === 'BLOCK_ADMIN' || role === 'BLOCK_STAFF') {
+    return ['view_dashboard', 'manage_block'];
   }
   return ['view_dashboard'];
+};
+
+const normalizeUser = (userId, response) => {
+  const normalizedRole = normalizeRoleFromApi(response?.role);
+  const districtValue = String(response?.district || '').toLowerCase() === 'null' ? null : response?.district || null;
+  const blockValue = String(response?.block || '').toLowerCase() === 'null' ? null : response?.block || null;
+
+  return {
+    id: String(userId || response?.userId || '').toUpperCase(),
+    name: String(userId || response?.officialName || response?.userId || '').toUpperCase(),
+    role: normalizedRole,
+    apiRole: response?.role || normalizedRole,
+    district: districtValue,
+    block: blockValue,
+    permissions: buildPermissions(normalizedRole, response?.role),
+  };
 };
 
 export const loginWithApi = createAsyncThunk(
@@ -104,27 +133,46 @@ export const loginWithApi = createAsyncThunk(
         return rejectWithValue('Login failed: token missing in response');
       }
 
-      const normalizedRole = normalizeRoleFromApi(response.role);
-      const districtValue = String(response.district || '').toLowerCase() === 'null' ? null : (response.district || null);
-      const blockValue = String(response.block || '').toLowerCase() === 'null' ? null : (response.block || null);
-      const user = {
-        id: livelihoodTrackerId,
-        name: livelihoodTrackerId,
-        role: normalizedRole,
-        apiRole: response.role,
-        district: districtValue,
-        block: blockValue,
-        permissions: buildPermissions(normalizedRole, response.role),
-      };
-
       return {
         token: response.token,
-        user,
+        user: normalizeUser(livelihoodTrackerId, response),
       };
-    } catch (err) {
-      return rejectWithValue(err?.message || 'Login failed');
+    } catch (error) {
+      return rejectWithValue(error?.message || 'Login failed');
     }
-  },
+  }
+);
+
+export const loginWithCredentials = createAsyncThunk(
+  'auth/loginWithCredentials',
+  async ({ userId, password }, { rejectWithValue }) => {
+    if (!userId?.trim() || !password?.trim()) {
+      return rejectWithValue('User ID and Password are required');
+    }
+
+    try {
+      const auth = await loginAdmin({ userId, password });
+      const normalized = {
+        token: auth.token,
+        user: {
+          ...auth.user,
+          role: normalizeRoleFromApi(auth.user?.role),
+          apiRole: auth.user?.role,
+          permissions: buildPermissions(normalizeRoleFromApi(auth.user?.role), auth.user?.role),
+        },
+      };
+      saveAuth(normalized);
+      return normalized;
+    } catch (error) {
+      const message =
+        error.response?.data?.message ||
+        error.response?.data?.title ||
+        error?.message ||
+        'Login failed. Please check your credentials and try again.';
+
+      return rejectWithValue(message);
+    }
+  }
 );
 
 const persistedWorkflow = loadWorkflowState();
@@ -132,12 +180,34 @@ const persistedSession = loadAuthSession();
 
 const initialState = {
   user: persistedSession.user,
-  token: persistedSession.token,
+  token: persistedSession.token || '',
   isAuthenticated: Boolean(persistedSession.token),
-  isLoading: false,
   error: null,
+  loading: false,
+  isLoading: false,
   pendingRegistrations: persistedWorkflow.pendingRegistrations,
   registeredUsers: persistedWorkflow.registeredUsers,
+};
+
+const applyLoginSuccess = (state, payload) => {
+  state.loading = false;
+  state.isLoading = false;
+  state.error = null;
+  state.user = payload.user;
+  state.token = payload.token;
+  state.isAuthenticated = true;
+  setAuthToken(payload.token, payload.user);
+  persistAuthSession(payload.token, payload.user);
+};
+
+const applyLoginFailure = (state, errorMessage) => {
+  clearStoredAuth();
+  state.loading = false;
+  state.isLoading = false;
+  state.user = null;
+  state.token = '';
+  state.isAuthenticated = false;
+  state.error = errorMessage || 'Login failed';
 };
 
 const authSlice = createSlice({
@@ -158,7 +228,7 @@ const authSlice = createSlice({
       } = action.payload;
 
       const normalizedOfficialEmail = officialEmail.trim().toLowerCase();
-      const exists = state.registeredUsers.find((u) => u.officialEmail?.toLowerCase() === normalizedOfficialEmail);
+      const exists = state.registeredUsers.find((user) => user.officialEmail?.toLowerCase() === normalizedOfficialEmail);
       if (exists) {
         state.error = 'Email already registered';
         return;
@@ -184,14 +254,14 @@ const authSlice = createSlice({
       state.error = null;
       persistWorkflowState(state);
     },
-
     approveUser: (state, action) => {
       const { userId } = action.payload;
       if (String(state.user?.apiRole || '').toLowerCase() !== 'adminuser01') return;
 
       const approvalDate = new Date().toISOString();
-      const pendingUser = state.pendingRegistrations.find((u) => u.id === userId);
-      const registeredUser = state.registeredUsers.find((u) => u.id === userId);
+      const pendingUser = state.pendingRegistrations.find((user) => user.id === userId);
+      const registeredUser = state.registeredUsers.find((user) => user.id === userId);
+
       if (pendingUser) {
         pendingUser.status = 'Approved';
         pendingUser.approvalDate = approvalDate;
@@ -200,16 +270,17 @@ const authSlice = createSlice({
         registeredUser.status = 'Approved';
         registeredUser.approvalDate = approvalDate;
       }
+
       persistWorkflowState(state);
     },
-
     rejectUser: (state, action) => {
       const { userId } = action.payload;
       if (String(state.user?.apiRole || '').toLowerCase() !== 'adminuser01') return;
 
       const rejectionDate = new Date().toISOString();
-      const pendingUser = state.pendingRegistrations.find((u) => u.id === userId);
-      const registeredUser = state.registeredUsers.find((u) => u.id === userId);
+      const pendingUser = state.pendingRegistrations.find((user) => user.id === userId);
+      const registeredUser = state.registeredUsers.find((user) => user.id === userId);
+
       if (pendingUser) {
         pendingUser.status = 'Rejected';
         pendingUser.rejectionDate = rejectionDate;
@@ -218,22 +289,29 @@ const authSlice = createSlice({
         registeredUser.status = 'Rejected';
         registeredUser.rejectionDate = rejectionDate;
       }
+
       persistWorkflowState(state);
     },
-
-    logout: (state) => {
-      state.user = null;
-      state.token = null;
-      state.isAuthenticated = false;
+    setUser: (state, action) => {
+      state.user = action.payload?.user || action.payload || null;
+      state.token = action.payload?.token || state.token;
+      state.isAuthenticated = !!state.token || !!state.user;
       state.error = null;
+    },
+    logout: (state) => {
+      clearStoredAuth();
       clearAuthToken();
       persistAuthSession(null, null);
+      state.user = null;
+      state.token = '';
+      state.isAuthenticated = false;
+      state.error = null;
+      state.loading = false;
+      state.isLoading = false;
     },
-
     clearAuthError: (state) => {
       state.error = null;
     },
-
     setPendingRegistrations: (state, action) => {
       state.pendingRegistrations = action.payload;
       persistWorkflowState(state);
@@ -242,27 +320,38 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     builder
       .addCase(loginWithApi.pending, (state) => {
+        state.loading = true;
         state.isLoading = true;
         state.error = null;
       })
       .addCase(loginWithApi.fulfilled, (state, action) => {
-        state.isLoading = false;
-        state.error = null;
-        state.user = action.payload.user;
-        state.token = action.payload.token;
-        state.isAuthenticated = true;
-        setAuthToken(action.payload.token);
-        persistAuthSession(action.payload.token, action.payload.user);
+        applyLoginSuccess(state, action.payload);
       })
       .addCase(loginWithApi.rejected, (state, action) => {
-        state.isLoading = false;
-        state.user = null;
-        state.token = null;
-        state.isAuthenticated = false;
-        state.error = action.payload || action.error.message || 'Login failed';
+        applyLoginFailure(state, action.payload || action.error.message);
+      })
+      .addCase(loginWithCredentials.pending, (state) => {
+        state.loading = true;
+        state.isLoading = true;
+        state.error = null;
+      })
+      .addCase(loginWithCredentials.fulfilled, (state, action) => {
+        applyLoginSuccess(state, action.payload);
+      })
+      .addCase(loginWithCredentials.rejected, (state, action) => {
+        applyLoginFailure(state, action.payload || 'Login failed');
       });
   },
 });
 
-export const { signUp, approveUser, rejectUser, logout, clearAuthError, setPendingRegistrations } = authSlice.actions;
+export const {
+  signUp,
+  approveUser,
+  rejectUser,
+  setUser,
+  logout,
+  clearAuthError,
+  setPendingRegistrations,
+} = authSlice.actions;
+
 export default authSlice.reducer;

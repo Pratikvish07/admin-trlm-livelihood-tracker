@@ -11,6 +11,7 @@ import ReportsPage from '../pages/ReportsPage';
 import LoginPage from '../pages/LoginPage';
 import SignUpPage from '../pages/SignUpPage';
 import AdminApprovalPage from '../pages/AdminApprovalPage';
+import AllAdminStaffPage from '../pages/AllAdminStaffPage';
 
 const PrivateRoute = ({ children }) => {
   const isAuthenticated = useSelector((state) => state.auth.isAuthenticated);
@@ -34,6 +35,7 @@ export default function AppRoutes() {
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="user-management" element={<UserManagementPage />} />
         <Route path="admin-approval" element={<AdminApprovalPage />} />
+        <Route path="all-admin-staff" element={<AllAdminStaffPage />} />
         <Route path="geography-master" element={<GeographyMasterPage />} />
         <Route path="loan-master" element={<LoanMasterPage />} />
         <Route path="analytics" element={<AnalyticsPage />} />
