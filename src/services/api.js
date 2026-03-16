@@ -37,6 +37,15 @@ const parseListResponse = (rawData) => {
   return [];
 };
 
+const pickFirst = (obj, keys) => {
+  for (const key of keys) {
+    if (obj?.[key] !== undefined && obj?.[key] !== null && obj?.[key] !== '') {
+      return obj[key];
+    }
+  }
+  return '';
+};
+
 const extractErrorMessage = (raw) => {
   if (!raw) return 'Request failed';
   if (typeof raw === 'string') return raw;
@@ -276,15 +285,17 @@ export const api = {
 
   async getDistricts() {
     ensureAuthBase();
-    const fallbackCandidates = [`${AUTH_BASE_FOR_CALLS}/master/districts`];
+    const fallbackCandidates = [
+      `${AUTH_BASE_FOR_CALLS}/master/districts`,
+      `${AUTH_BASE_FOR_CALLS}/master/district`,
+    ];
     const fallbackData = await fetchListWithFallback(fallbackCandidates);
 
     if (fallbackData.length) {
       return fallbackData
         .map((district) => ({
-          districtId: district.districtId ?? district.DistrictId ?? district.id ?? district.value ?? '',
-          districtName:
-            district.districtName ?? district.DistrictName ?? district.name ?? district.district ?? district.label ?? '',
+          districtId: pickFirst(district, ['districtId', 'DistrictId', 'id', 'Id', 'district_id', 'DistrictID']),
+          districtName: pickFirst(district, ['districtName', 'DistrictName', 'name', 'Name', 'district', 'District']),
         }))
         .filter((district) => district.districtId !== '' && district.districtName);
     }
@@ -294,9 +305,8 @@ export const api = {
     const rows = Array.isArray(data) ? data : data?.data || data?.districts || [];
     return rows
       .map((district) => ({
-        districtId: district.districtId ?? district.DistrictId ?? district.id ?? district.value ?? '',
-        districtName:
-          district.districtName ?? district.DistrictName ?? district.name ?? district.district ?? district.label ?? '',
+        districtId: pickFirst(district, ['districtId', 'DistrictId', 'id', 'Id', 'district_id', 'DistrictID']),
+        districtName: pickFirst(district, ['districtName', 'DistrictName', 'name', 'Name', 'district', 'District']),
       }))
       .filter((district) => district.districtId !== '' && district.districtName);
   },
@@ -305,18 +315,19 @@ export const api = {
     if (!districtId) return [];
     ensureAuthBase();
 
+    const encodedDistrictId = encodeURIComponent(districtId);
     const fallbackCandidates = [
-      `${AUTH_BASE_FOR_CALLS}/master/blocks/${encodeURIComponent(districtId)}`,
-      `${AUTH_BASE_FOR_CALLS}/master/block/${encodeURIComponent(districtId)}`,
+      `${AUTH_BASE_FOR_CALLS}/master/blocks/${encodedDistrictId}`,
+      `${AUTH_BASE_FOR_CALLS}/master/block/${encodedDistrictId}`,
     ];
     const fallbackData = await fetchListWithFallback(fallbackCandidates);
 
     if (fallbackData.length) {
       return fallbackData
         .map((block) => ({
-          blockId: block.blockId ?? block.BlockId ?? block.id ?? block.value ?? '',
-          blockName: block.blockName ?? block.BlockName ?? block.name ?? block.block ?? block.label ?? '',
-          districtId: block.districtId ?? block.DistrictId ?? block.district_id ?? districtId,
+          blockId: pickFirst(block, ['blockId', 'BlockId', 'id', 'Id', 'block_id', 'BlockID']),
+          blockName: pickFirst(block, ['blockName', 'BlockName', 'name', 'Name', 'block', 'Block']),
+          districtId: pickFirst(block, ['districtId', 'DistrictId', 'district_id', 'DistrictID']) || districtId,
         }))
         .filter((block) => block.blockId !== '' && block.blockName);
     }
@@ -326,9 +337,9 @@ export const api = {
     const rows = Array.isArray(data) ? data : data?.data || data?.blocks || [];
     return rows
       .map((block) => ({
-        blockId: block.blockId ?? block.BlockId ?? block.id ?? block.value ?? '',
-        blockName: block.blockName ?? block.BlockName ?? block.name ?? block.block ?? block.label ?? '',
-        districtId: block.districtId ?? block.DistrictId ?? block.district_id ?? districtId,
+        blockId: pickFirst(block, ['blockId', 'BlockId', 'id', 'Id', 'block_id', 'BlockID']),
+        blockName: pickFirst(block, ['blockName', 'BlockName', 'name', 'Name', 'block', 'Block']),
+        districtId: pickFirst(block, ['districtId', 'DistrictId', 'district_id', 'DistrictID']) || districtId,
       }))
       .filter((block) => block.blockId !== '' && block.blockName);
   },
