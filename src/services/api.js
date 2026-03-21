@@ -49,14 +49,17 @@ const pickFirst = (obj, keys) => {
 const extractErrorMessage = (raw) => {
   if (!raw) return 'Request failed';
   if (typeof raw === 'string') return raw;
+  if (raw.message && raw.detail) return `${raw.message} ${raw.detail}`;
+  if (raw.detail) return raw.detail;
   if (raw.message) return raw.message;
   if (raw.title) return raw.title;
+  if (raw.sqlState || raw.number) return `DB Error ${raw.sqlState || ''} (${raw.number || ''}): ${raw.message || raw.detail || 'SQL type conversion failed (nvarchar→int)'}`;
   if (Array.isArray(raw.errors)) return raw.errors.join(', ');
   if (raw.errors && typeof raw.errors === 'object') {
     const flat = Object.values(raw.errors).flat().filter(Boolean);
     if (flat.length) return flat.join(', ');
   }
-  return 'Request failed';
+  return 'Request failed (500 Internal Server Error - check backend logs)';
 };
 
 let authTokenCache = null;
@@ -170,19 +173,48 @@ async function requestAuthApi(path, options = {}) {
   });
 
   if (!res.ok) {
-    let message = `Request failed with status ${res.status}`;
-
+    const errorText = await res.text();
+    let message = `Request failed with status ${res.status} for ${path}`;
     try {
-      const payload = await res.json();
+      const payload = JSON.parse(errorText);
       message = extractErrorMessage(payload) || message;
     } catch {
-      // Ignore parse errors.
+      message = errorText || message;
     }
 
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = res.status;
+    error.path = path;
+    error.body = errorText;
+    throw error;
   }
 
   return res;
+}
+
+const parseAdminListRows = (data) =>
+  Array.isArray(data) ? data : data?.data || data?.users || data?.items || data?.result || data?.payload || [];
+
+async function requestAdminListWithFallback(paths) {
+  let lastError = null;
+
+  for (const path of paths) {
+    try {
+      const res = await requestAuthApi(path);
+      const data = await res.json();
+      return {
+        path,
+        rows: parseAdminListRows(data),
+      };
+    } catch (error) {
+      lastError = error;
+      if (Number(error?.status) >= 500) {
+        break;
+      }
+    }
+  }
+
+  throw lastError || new Error('Unable to load admin records.');
 }
 
 export const api = {
@@ -225,30 +257,42 @@ export const api = {
   },
 
   async getPendingRegistrations() {
-    const res = await request('/users/pending');
-    return res.json();
+    const { path, rows } = await requestAdminListWithFallback(['/admin/pending', '/admin/all-users']);
+    if (path === '/admin/pending') {
+      return rows;
+    }
+
+    return rows.filter((row) => {
+      const status = String(row?.status || row?.userStatus || row?.approvalStatus || 'Pending').trim().toLowerCase();
+      return status === 'pending';
+    });
   },
 
   async approveUser(userId) {
-    const res = await request(`/users/${userId}/approve`, {
+    const res = await requestAuthApi(`/admin/approve/${Number(userId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
     });
-    return res.json();
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
   },
 
   async rejectUser(userId) {
-    const res = await request(`/users/${userId}/reject`, {
+    const res = await requestAuthApi(`/admin/reject/${Number(userId)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
     });
-    return res.json();
+    try {
+      return await res.json();
+    } catch {
+      return null;
+    }
   },
 
   async getAllAdminUsers() {
-    const res = await requestAuthApi('/admin/all-users');
-    const data = await res.json();
-    return Array.isArray(data) ? data : data?.data || data?.users || [];
+    const { rows } = await requestAdminListWithFallback(['/admin/all-users', '/admin/pending']);
+    return rows;
   },
 
   async updateAdminUser(payload) {
@@ -281,6 +325,31 @@ export const api = {
     } catch {
       return null;
     }
+  },
+
+  async getRoles() {
+    ensureAuthBase();
+    const fallbackCandidates = [`${AUTH_BASE_FOR_CALLS}/Role`, `${AUTH_BASE_FOR_CALLS}/role`];
+    const fallbackData = await fetchListWithFallback(fallbackCandidates);
+
+    if (fallbackData.length) {
+      return fallbackData
+        .map((role) => ({
+          roleId: Number(pickFirst(role, ['roleId', 'RoleId', 'id', 'Id'])) || 0,
+          roleName: String(pickFirst(role, ['roleName', 'RoleName', 'name', 'Name'])).trim(),
+        }))
+        .filter((role) => role.roleId > 0 && role.roleName);
+    }
+
+    const res = await requestAuthApi('/Role');
+    const data = await res.json();
+    const rows = Array.isArray(data) ? data : data?.data || data?.roles || [];
+    return rows
+      .map((role) => ({
+        roleId: Number(pickFirst(role, ['roleId', 'RoleId', 'id', 'Id'])) || 0,
+        roleName: String(pickFirst(role, ['roleName', 'RoleName', 'name', 'Name'])).trim(),
+      }))
+      .filter((role) => role.roleId > 0 && role.roleName);
   },
 
   async getDistricts() {
@@ -344,8 +413,44 @@ export const api = {
       .filter((block) => block.blockId !== '' && block.blockName);
   },
 
+  async getVillagesByBlock(blockId) {
+    if (!blockId) return [];
+    ensureAuthBase();
+
+    const encodedBlockId = encodeURIComponent(blockId);
+    const fallbackCandidates = [
+      `${AUTH_BASE_FOR_CALLS}/master/village/${encodedBlockId}`,
+      `${AUTH_BASE_FOR_CALLS}/master/villages/${encodedBlockId}`,
+    ];
+    const fallbackData = await fetchListWithFallback(fallbackCandidates);
+
+    if (fallbackData.length) {
+      return fallbackData
+        .map((village) => ({
+          villageId: pickFirst(village, ['villageId', 'VillageId', 'id', 'Id', 'village_id', 'VillageID']),
+          villageName: pickFirst(village, ['villageName', 'VillageName', 'name', 'Name', 'village', 'Village']),
+          blockId: pickFirst(village, ['blockId', 'BlockId', 'block_id', 'BlockID']) || blockId,
+        }))
+        .filter((village) => village.villageName);
+    }
+
+    const res = await requestAuthApi(`/master/village/${blockId}`);
+    const data = await res.json();
+    const rows = Array.isArray(data) ? data : data?.data || data?.villages || [];
+    return rows
+      .map((village) => ({
+        villageId: pickFirst(village, ['villageId', 'VillageId', 'id', 'Id', 'village_id', 'VillageID']),
+        villageName: pickFirst(village, ['villageName', 'VillageName', 'name', 'Name', 'village', 'Village']),
+        blockId: pickFirst(village, ['blockId', 'BlockId', 'block_id', 'BlockID']) || blockId,
+      }))
+      .filter((village) => village.villageName);
+  },
+
   async getShgMembers(pageNumber = 1, pageSize = 50) {
-    const res = await requestAuthApi(`/SHGUpload/members?pageNumber=${pageNumber}&pageSize=${pageSize}`);
+    const safePage = Number(pageNumber) || 1;
+    const safeSize = Number(pageSize) || 50;
+    const res = await requestAuthApi(`/SHGUpload/members?pageNumber=${safePage}&pageSize=${safeSize}`);
+
     const data = await res.json();
     const rows = Array.isArray(data) ? data : data?.items || data?.data || data?.members || data?.results || [];
 

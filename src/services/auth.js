@@ -32,6 +32,17 @@ export function getAuthToken() {
   return getStoredAuth()?.token || '';
 }
 
+function deriveRoleId(roleName) {
+  const normalized = String(roleName || '').trim().toUpperCase();
+  if (normalized === 'ADMINUSER01' || normalized === 'ADMINUSER02') return 1;
+  if (normalized === 'STATE_ADMIN') return 1;
+  if (normalized === 'DISTRICT_ADMIN') return 2;
+  if (normalized === 'DISTRICT_STAFF') return 2;
+  if (normalized === 'BLOCK_ADMIN') return 3;
+  if (normalized === 'BLOCK_STAFF') return 3;
+  return 0;
+}
+
 export async function loginAdmin({ userId, password }) {
   const payload = {
     livelihoodTrackerId: userId.trim(),
@@ -49,6 +60,7 @@ export async function loginAdmin({ userId, password }) {
     user: {
       id: payload.livelihoodTrackerId.toUpperCase(),
       name: payload.livelihoodTrackerId.toUpperCase(),
+      roleId: Number(data.roleId) || deriveRoleId(data.role),
       role: data.role,
       district: data.district ?? '',
       block: data.block ?? '',

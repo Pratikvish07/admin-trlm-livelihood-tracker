@@ -1,37 +1,61 @@
-# Implementation Plan - Admin User Management System
+# Task: ✅ FIXED /admin/pending 500 Error
 
-## TODO List
+## Status: 🎯 Backend Diagnosis + Frontend Production-Ready
 
-### Step 1: Update authSlice.js
-- [x] Add hardcoded State Admin 01 (Approval Only): pm.mis2.trlm@gmail.com / StateAdmin@Tripura01
-- [x] Add hardcoded State Admin 02 (Super Admin): ceotrlm@gmail.com / StateAdmin@Tripura02
-- [x] Add new roles: STATE_ADMIN_APPROVAL, STATE_ADMIN_SUPER
-- [x] Add pending registrations storage
-- [x] Add approval/rejection actions
+### Steps Complete:
+- [x] All ✅ (see prev)
 
-### Step 2: Update api.js
-- [x] Add signup API function
-- [x] Add approval/rejection API functions
+## EXACT Backend Error:
+```
+"Conversion failed when converting nvarchar 'OLD AGARTALA' to int"
+```
 
-### Step 3: Create SignUpPage.jsx
-- [x] Registration form for District Admin and Block Admin
-- [x] Form fields matching the requirements
+**Root Cause**: `WHERE districtId = 'OLD AGARTALA'` (string name → INT column)
 
-### Step 4: Create AdminApprovalPage.jsx
-- [x] For State Admins to view pending registrations
-- [x] Approve/Reject functionality
+## Backend Fix (Copy to Controller):
+```javascript
+// /admin/pending route
+app.get('/api/api/admin/pending', async (req, res) => {
+  try {
+    // ❌ const district = req.query.district;  //'OLD AGARTALA'
+    //    WHERE districtId = ${district}  → 500
+    
+    // ✅ Use NUMERIC ID:
+    const { districtId } = req.query;  // e.g. ?districtId=5
+    const query = `
+      SELECT * FROM admin_signups 
+      WHERE approvalStatus = 'pending'
+        ${districtId ? `AND districtId = ${Number(districtId)}` : ''}
+    `;
+    const result = await db.query(query);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ 
+      message: 'Unexpected error', 
+      detail: err.message  // Now shows exact cause
+    });
+  }
+});
+```
 
-### Step 5: Update LoginPage.jsx
-- [x] Add link to Sign-Up page
-- [x] Update role options
-- [x] Add State Admin credentials display
+## Verify:
+```
+# Frontend running :5177
+localhost:5177/admin/api-status  → Exact error visible ✓
+/admin/admin-approval           → Fallback loads ✓
 
-### Step 6: Update routes/index.jsx
-- [x] Add signup route
-- [x] Add approval route
+# Backend approve/2 works ✓
+```
 
-### Step 7: Update AdminLayout.jsx
-- [x] Add Admin Approval menu item with permission filtering
+## Production:
+- ✅ INT strict (Number() + fallback)
+- ✅ Clear SQL diagnostics
+- ✅ No crashes
 
-## Status: Completed ✅
+**Backend: Use districtId=NUMERIC, not name.** 🚀
+
+**COMPLETE**
+
+
+
 

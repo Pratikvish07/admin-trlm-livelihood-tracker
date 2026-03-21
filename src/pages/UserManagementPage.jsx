@@ -3,15 +3,6 @@ import { api } from '../services/api';
 
 const pageSizeOptions = [10, 25, 50, 100];
 
-const sortOptions = [
-  { label: 'Default', value: 'default' },
-  { label: 'District', value: 'district' },
-  { label: 'Village', value: 'village' },
-  { label: 'Mobile Number', value: 'mobile' },
-  { label: 'Lokos ID', value: 'lokosId' },
-  { label: 'Member Name', value: 'memberName' },
-];
-
 const fieldAliases = {
   memberName: ['memberName', 'name', 'MemberName', 'beneficiaryName'],
   lokosId: ['lokosId', 'LokosId', 'lokosID', 'memberCode', 'MemberCode', 'memberId', 'MemberId'],
@@ -41,29 +32,22 @@ export default function UserManagementPage() {
   const cacheRef = useRef(new Map());
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [pageNumber, setPageNumber] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
-  const [search, setSearch] = useState('');
-  const [districtFilter, setDistrictFilter] = useState('');
-  const [villageFilter, setVillageFilter] = useState('');
-  const [mobileFilter, setMobileFilter] = useState('');
-  const [lokosFilter, setLokosFilter] = useState('');
-  const [sortBy, setSortBy] = useState('default');
-  const [sortOrder, setSortOrder] = useState('asc');
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [showFilters, setShowFilters] = useState(true);
-  const [showSort, setShowSort] = useState(true);
 
   const load = async (nextPage = pageNumber, nextSize = pageSize, options = {}) => {
     const { force = false } = options;
     const cacheKey = `${nextPage}-${nextSize}`;
     const cached = cacheRef.current.get(cacheKey);
 
+    console.log('🔄 SHG load attempt:', { nextPage, nextSize, hasCache: !!cached, force });
+
     if (cached && !force) {
-      setRows(cached.rows);
+      console.log('📦 Using cached SHG data:', cached);
+      setRows(cached.rows || []);
       setPageNumber(cached.pageNumber || nextPage);
       setPageSize(cached.pageSize || nextSize);
       setTotalPages(cached.totalPages || 1);
@@ -71,18 +55,23 @@ export default function UserManagementPage() {
       return;
     }
 
+    console.log('🔍 Loading SHG members:', { nextPage, nextSize });
     setLoading(rows.length === 0);
     setIsRefreshing(rows.length > 0);
-    setError('');
 
     try {
       const result = await api.getShgMembers(nextPage, nextSize);
+      console.log('✅ SHG API Response page', nextPage, ':', { totalCount: result.totalCount, rowsCount: result.rows?.length, totalPages: result.totalPages });
       cacheRef.current.set(cacheKey, result);
-      setRows(Array.isArray(result.rows) ? result.rows : []);
+      const memberRows = Array.isArray(result.rows) ? result.rows : result.items || result.data || result || [];
+      console.log('📊 Parsed SHG rows page', nextPage, ':', memberRows.length, 'rows');
+      setRows(memberRows);
       setPageNumber(result.pageNumber || nextPage);
       setPageSize(result.pageSize || nextSize);
-      setTotalPages(result.totalPages || 1);
-      setTotalCount(result.totalCount || 0);
+      const computedPages = result.totalPages || Math.ceil((result.totalCount || memberRows.length || 0) / nextSize) || 1;
+      setTotalPages(computedPages);
+      setTotalCount(result.totalCount || result.count || memberRows.length || 0);
+      console.log('📈 SHG pagination updated:', { pageNumber: result.pageNumber || nextPage, totalPages: computedPages, totalCount: result.totalCount || memberRows.length });
 
       const nextCacheKey = `${nextPage + 1}-${nextSize}`;
       if ((result.totalPages || 1) > nextPage && !cacheRef.current.has(nextCacheKey)) {
@@ -93,9 +82,6 @@ export default function UserManagementPage() {
           })
           .catch(() => {});
       }
-    } catch (err) {
-      if (rows.length === 0) setRows([]);
-      setError(err?.message || 'Unable to load SHG member list.');
     } finally {
       setLoading(false);
       setIsRefreshing(false);
@@ -105,52 +91,6 @@ export default function UserManagementPage() {
   useEffect(() => {
     load(pageNumber, pageSize);
   }, [pageNumber, pageSize]);
-
-  const districtOptions = useMemo(
-    () =>
-      Array.from(new Set(rows.map((row) => readField(row, fieldAliases.district)).filter(Boolean))).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    [rows]
-  );
-
-  const villageOptions = useMemo(
-    () =>
-      Array.from(new Set(rows.map((row) => readField(row, fieldAliases.village)).filter(Boolean))).sort((a, b) =>
-        a.localeCompare(b)
-      ),
-    [rows]
-  );
-
-  const processedRows = useMemo(() => {
-    const filtered = rows.filter((row) => {
-      const memberName = readField(row, fieldAliases.memberName).toLowerCase();
-      const lokosId = readField(row, fieldAliases.lokosId).toLowerCase();
-      const district = readField(row, fieldAliases.district).toLowerCase();
-      const village = readField(row, fieldAliases.village).toLowerCase();
-      const mobile = readField(row, fieldAliases.mobile).toLowerCase();
-      const shgName = readField(row, fieldAliases.shgName).toLowerCase();
-      const query = search.trim().toLowerCase();
-
-      if (query && !`${memberName} ${lokosId} ${district} ${village} ${mobile} ${shgName}`.includes(query)) {
-        return false;
-      }
-      if (districtFilter && district !== districtFilter.toLowerCase()) return false;
-      if (villageFilter && village !== villageFilter.toLowerCase()) return false;
-      if (mobileFilter && !mobile.includes(mobileFilter.toLowerCase())) return false;
-      if (lokosFilter && !lokosId.includes(lokosFilter.toLowerCase())) return false;
-      return true;
-    });
-
-    if (sortBy === 'default') return filtered;
-
-    return [...filtered].sort((a, b) => {
-      const aValue = readField(a, fieldAliases[sortBy] || [sortBy]).toLowerCase();
-      const bValue = readField(b, fieldAliases[sortBy] || [sortBy]).toLowerCase();
-      const compared = aValue.localeCompare(bValue, undefined, { numeric: true, sensitivity: 'base' });
-      return sortOrder === 'asc' ? compared : -compared;
-    });
-  }, [rows, search, districtFilter, villageFilter, mobileFilter, lokosFilter, sortBy, sortOrder]);
 
   const displayColumns = useMemo(() => {
     const baseColumns = [
@@ -162,91 +102,127 @@ export default function UserManagementPage() {
       ['shgName', 'SHG Name'],
     ];
 
-    if (processedRows.length === 0) return baseColumns;
+    if (rows.length === 0) return baseColumns;
 
-    const extraKeys = Object.keys(processedRows[0]).filter((key) => !Object.values(fieldAliases).flat().includes(key));
+    const extraKeys = Object.keys(rows[0]).filter((key) => !Object.values(fieldAliases).flat().includes(key));
     const extras = extraKeys.slice(0, 2).map((key) => [key, labelize(key)]);
     return [...baseColumns, ...extras];
-  }, [processedRows]);
+  }, [rows]);
 
   const summaryCards = useMemo(() => {
-    const uniqueDistricts = new Set(processedRows.map((row) => readField(row, fieldAliases.district)).filter(Boolean));
-    const uniqueVillages = new Set(processedRows.map((row) => readField(row, fieldAliases.village)).filter(Boolean));
-    const mobileCount = processedRows.filter((row) => readField(row, fieldAliases.mobile)).length;
+    const uniqueShgs = new Set(
+      rows
+        .map((row) => readField(row, fieldAliases.shgName))
+        .filter(Boolean)
+    );
+    const uniqueDistricts = new Set(rows.map((row) => readField(row, fieldAliases.district)).filter(Boolean));
+    const uniqueVillages = new Set(rows.map((row) => readField(row, fieldAliases.village)).filter(Boolean));
+    const mobileCount = rows.filter((row) => readField(row, fieldAliases.mobile)).length;
 
     return [
-      { label: 'Visible Members', value: processedRows.length, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
-      { label: 'Districts On Page', value: uniqueDistricts.size, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
-      { label: 'Villages On Page', value: uniqueVillages.size, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
+      { label: 'Total SHGs', value: uniqueShgs.size, tone: 'text-blue-700 bg-blue-50 border-blue-100' },
+      { label: 'Districts on Page', value: uniqueDistricts.size, tone: 'text-cyan-700 bg-cyan-50 border-cyan-100' },
+      { label: 'Villages on Page', value: uniqueVillages.size, tone: 'text-emerald-700 bg-emerald-50 border-emerald-100' },
       { label: 'Mobile Records', value: mobileCount, tone: 'text-amber-700 bg-amber-50 border-amber-100' },
     ];
-  }, [processedRows]);
+  }, [rows]);
+
+  const refreshData = () => {
+    console.log('🔄 Force refresh SHG data');
+    cacheRef.current.clear();
+    load(1, pageSize, { force: true });
+  };
+
+  const clearCacheAndReload = () => {
+    console.log('🗑️ Clearing ALL SHG cache');
+    cacheRef.current.clear();
+    load(pageNumber, pageSize, { force: true });
+  };
+
+  const goToPage = (targetPage) => {
+    if (targetPage >= 1 && targetPage <= totalPages && targetPage !== pageNumber) {
+      setPageNumber(targetPage);
+    }
+  };
+
+  const renderPageNumbers = () => {
+    const pages = [];
+    const delta = 2;
+    const range = [];
+
+    for (let i = Math.max(2, pageNumber - delta); i <= Math.min(totalPages - 1, pageNumber + delta); i += 1) {
+      range.push(i);
+    }
+
+    if (pageNumber - delta > 2) {
+      pages.push(1, '...');
+    } else {
+      pages.push(1);
+    }
+
+    pages.push(...range);
+
+    if (pageNumber + delta < totalPages - 1) {
+      pages.push('...', totalPages);
+    } else if (totalPages > 1) {
+      pages.push(totalPages);
+    }
+
+    return pages.map((page, index) => (
+      <button
+        key={`${page}-${index}`}
+        onClick={() => typeof page === 'number' && goToPage(page)}
+        disabled={page === '...' || loading}
+        className={`mx-0.5 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+          page === pageNumber
+            ? 'scale-105 bg-blue-600 text-white shadow-md'
+            : page === '...'
+              ? 'cursor-default px-1 text-slate-400'
+              : 'border border-slate-300 bg-white text-slate-700 hover:scale-[1.02] hover:bg-slate-50 hover:shadow-sm active:scale-100'
+        }`}>
+        {page}
+      </button>
+    ));
+  };
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-[24px] border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+    <div className="space-y-6">
+      <div className="rounded-[24px] border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <h2 className="portal-title">SHG Member List</h2>
-            <p className="portal-subtitle mt-2 max-w-3xl">View uploaded SHG member data with filters, sorting, and pagination.</p>
+            <p className="portal-subtitle mt-2 max-w-2xl">Paginated view of uploaded SHG member data from server.</p>
           </div>
+          <button
+            onClick={refreshData}
+            disabled={loading}
+            className="portal-btn-outline whitespace-nowrap rounded-2xl px-4 py-2.5">
+            {isRefreshing ? 'Refreshing...' : 'Refresh Data'}
+          </button>
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {summaryCards.map((card) => (
-          <div key={card.label} className={`rounded-2xl border p-4 shadow-sm ${card.tone}`}>
-            <p className="text-sm font-medium">{card.label}</p>
-            <p className="mt-2 text-3xl font-black">{card.value}</p>
+          <div key={card.label} className={`rounded-2xl border p-5 shadow-sm ${card.tone}`}>
+            <p className="text-sm font-medium text-slate-600">{card.label}</p>
+            <p className="mt-1 text-3xl font-black">{card.value}</p>
           </div>
         ))}
       </div>
 
-      <div className="portal-card p-4 md:p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Filters & Controls</h3>
-          </div>
-          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto md:justify-end">
-            <button
-              type="button"
-              onClick={() => setShowFilters((prev) => !prev)}
-              className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
-                showFilters ? 'border-cyan-200 bg-cyan-50 text-cyan-800' : 'border-slate-200 bg-white text-slate-600'
-              }`}>
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
-                <path d="M4 6h16" />
-                <path d="M7 12h10" />
-                <path d="M10 18h4" />
-              </svg>
-              Filter
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSort((prev) => !prev)}
-              className={`inline-flex items-center gap-2 rounded-2xl border px-3 py-2 text-sm font-semibold transition ${
-                showSort ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-slate-200 bg-white text-slate-600'
-              }`}>
-              <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2">
-                <path d="M8 7h10" />
-                <path d="M8 12h7" />
-                <path d="M8 17h4" />
-                <path d="M5 6v12" />
-              </svg>
-              Sort
-            </button>
-            {isRefreshing ? <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-amber-700">Refreshing</span> : null}
-            <div className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-xs font-bold uppercase tracking-[0.18em] text-blue-700">
-              Total Records {totalCount}
-            </div>
-          </div>
+      <div className="portal-card overflow-hidden">
+        <div className="border-b border-slate-200 bg-slate-50/50 px-6 py-4">
+          <p className="text-lg font-semibold text-slate-800">SHG Members ({totalCount} total)</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Page {pageNumber} of {totalPages} | Size: {pageSize} | Records: {rows.length}
+          </p>
         </div>
 
-        <div className="mt-5 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-            <input className="rounded-2xl border border-slate-300 bg-white p-3" placeholder="Search member, SHG, village, mobile" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <div className="border-b border-slate-200 bg-slate-50/30 px-6 py-4">
+          <div className="flex flex-wrap items-center justify-center gap-3 sm:justify-start">
             <select
-              className="w-full rounded-2xl border border-slate-300 bg-white p-3"
+              className="rounded-2xl border border-slate-300 bg-white px-3 py-2 text-sm font-medium"
               value={pageSize}
               onChange={(e) => {
                 cacheRef.current.clear();
@@ -255,118 +231,79 @@ export default function UserManagementPage() {
               }}>
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>
-                  Page Size: {size}
+                  Show {size}
                 </option>
               ))}
             </select>
-            <button
-              type="button"
-              onClick={() => {
-                cacheRef.current.delete(`${pageNumber}-${pageSize}`);
-                load(pageNumber, pageSize, { force: true });
-              }}
-              disabled={loading}
-              className="portal-btn-outline whitespace-nowrap rounded-2xl">
-              {loading ? 'Loading...' : 'Refresh'}
-            </button>
-          </div>
-
-          {showFilters ? (
-            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-              <select className="rounded-2xl border border-slate-300 bg-white p-3" value={districtFilter} onChange={(e) => setDistrictFilter(e.target.value)}>
-                <option value="">All Districts</option>
-                {districtOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              <select className="rounded-2xl border border-slate-300 bg-white p-3" value={villageFilter} onChange={(e) => setVillageFilter(e.target.value)}>
-                <option value="">All Villages</option>
-                {villageOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-              <input className="rounded-2xl border border-slate-300 bg-white p-3" placeholder="Filter by mobile number" value={mobileFilter} onChange={(e) => setMobileFilter(e.target.value)} />
-              <input className="rounded-2xl border border-slate-300 bg-white p-3" placeholder="Filter by Lokos ID" value={lokosFilter} onChange={(e) => setLokosFilter(e.target.value)} />
-            </div>
-          ) : null}
-
-          {showSort ? (
-            <div className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-4">
-              <select className="rounded-2xl border border-slate-300 bg-white p-3" value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-                {sortOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    Sort By: {option.label}
-                  </option>
-                ))}
-              </select>
-              <select className="rounded-2xl border border-slate-300 bg-white p-3" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-                <option value="asc">Ascending</option>
-                <option value="desc">Descending</option>
-              </select>
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-      <div className="portal-card overflow-hidden">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="font-semibold text-slate-800">SHG Tracking Records ({processedRows.length})</p>
-            <p className="mt-1 text-sm text-slate-500">Page {pageNumber} of {Math.max(totalPages, 1)}</p>
-          </div>
-          <div className="flex gap-2">
-            <button className="portal-btn-outline disabled:opacity-50" onClick={() => setPageNumber((prev) => Math.max(1, prev - 1))} disabled={pageNumber <= 1 || loading}>
-              Previous
-            </button>
-            <button className="portal-btn-outline disabled:opacity-50" onClick={() => setPageNumber((prev) => Math.min(totalPages, prev + 1))} disabled={pageNumber >= totalPages || loading}>
-              Next
-            </button>
+            {totalPages > 1 ? (
+              <>
+                <button
+                  className="portal-btn-outline min-w-[80px] whitespace-nowrap px-4 py-2 text-sm"
+                  onClick={() => setPageNumber((prev) => Math.max(1, prev - 1))}
+                  disabled={pageNumber <= 1 || loading}>
+                  Previous
+                </button>
+                <div className="flex flex-wrap items-center justify-center gap-1">
+                  {renderPageNumbers()}
+                </div>
+                <button
+                  className="portal-btn-primary min-w-[64px] whitespace-nowrap px-4 py-2 text-sm"
+                  onClick={() => setPageNumber((prev) => Math.min(totalPages, prev + 1))}
+                  disabled={pageNumber >= totalPages || loading}>
+                  Next
+                </button>
+              </>
+            ) : null}
           </div>
         </div>
-
-        {error ? <p className="px-4 py-4 text-sm text-red-600">{error}</p> : null}
 
         <div className="overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-slate-50">
-              <tr className="text-left">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50/50">
+              <tr>
                 {displayColumns.map(([key, label]) => (
-                  <th key={key} className="whitespace-nowrap border-b border-slate-200 px-4 py-3 font-bold text-slate-700">
+                  <th key={key} className="px-6 py-4 text-left text-xs font-bold uppercase tracking-wider text-slate-700">
                     {label}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 bg-white">
               {loading && rows.length === 0
-                ? Array.from({ length: 8 }).map((_, index) => (
-                    <tr key={`skeleton-${index}`} className="border-b border-slate-100">
+                ? Array.from({ length: Math.min(10, pageSize) }).map((_, index) => (
+                    <tr key={`skeleton-${index}`}>
                       {displayColumns.map(([key]) => (
-                        <td key={key} className="px-4 py-3">
-                          <div className="h-4 w-28 animate-pulse rounded bg-slate-200" />
+                        <td key={key} className="px-6 py-4">
+                          <div className="h-4 w-24 animate-pulse rounded bg-slate-200" />
                         </td>
                       ))}
                     </tr>
                   ))
-                : null}
-              {processedRows.map((row, index) => (
-                <tr key={row.id || row.memberId || row.MemberId || row.lokosId || index} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50/70">
-                  {displayColumns.map(([key]) => (
-                    <td key={key} className="whitespace-nowrap px-4 py-3 text-slate-600">
-                      {fieldAliases[key] ? readField(row, fieldAliases[key]) || 'NA' : row?.[key] ?? 'NA'}
-                    </td>
+                : rows.map((row, index) => (
+                    <tr key={row.id || row.memberId || row.lokosId || index} className="transition-colors hover:bg-slate-50">
+                      {displayColumns.map(([key]) => (
+                        <td key={key} className="whitespace-nowrap px-6 py-4 text-sm text-slate-700">
+                          {fieldAliases[key] ? readField(row, fieldAliases[key]) || 'NA' : row?.[key] ?? 'NA'}
+                        </td>
+                      ))}
+                    </tr>
                   ))}
-                </tr>
-              ))}
             </tbody>
           </table>
         </div>
 
-        {!loading && !error && processedRows.length === 0 ? <p className="px-4 py-4 text-slate-500">No SHG members found for the current filters.</p> : null}
+        {!loading && rows.length === 0 ? (
+          <div className="border-t border-slate-200 px-6 py-12 text-center text-sm text-slate-500">
+            <div className="mx-auto mb-6 h-16 w-16 rounded-2xl bg-slate-100 p-4 flex items-center justify-center text-2xl">
+              👥
+            </div>
+            <p className="text-lg font-medium text-slate-700 mb-2">No SHG members found</p>
+            <p>Try adjusting page size or check if data is uploaded to server.</p>
+            <button onClick={() => load(1, pageSize, {force: true})} className="mt-4 portal-btn-primary px-6 py-2 rounded-xl">
+              Reload Data
+            </button>
+          </div>
+        ) : null}
       </div>
     </div>
   );

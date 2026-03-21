@@ -15,13 +15,9 @@ const emptySignupForm = {
   designation: '',
   livelihoodTrackerId: '',
   password: '',
-  role: 'DISTRICT_STAFF',
+  roleId: '',
+  roleName: '',
 };
-
-const signupRoleOptions = [
-  { label: 'District Staff', value: 'DISTRICT_STAFF' },
-  { label: 'Block Staff', value: 'BLOCK_STAFF' },
-];
 
 const getDistrictOptionValue = (district) =>
   String(district?.districtId ?? district?.DistrictId ?? district?.id ?? district?.value ?? '');
@@ -47,6 +43,12 @@ const getBlockOptionLabel = (block) =>
       block?.label ??
       getBlockOptionValue(block)
   );
+
+const formatRoleLabel = (roleName) =>
+  String(roleName || '')
+    .replace(/[_-]+/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
 
 function EyeButton({ visible, onClick }) {
   return (
@@ -78,7 +80,7 @@ export default function LoginPage() {
   const { isAuthenticated, error, loading } = useSelector((state) => state.auth);
 
   const [activeTab, setActiveTab] = useState('login');
-  const [userId, setUserId] = useState('001');
+  const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [signupForm, setSignupForm] = useState(emptySignupForm);
@@ -86,6 +88,8 @@ export default function LoginPage() {
   const [signupLoading, setSignupLoading] = useState(false);
   const [signupMessage, setSignupMessage] = useState('');
   const [signupError, setSignupError] = useState('');
+  const [roleOptions, setRoleOptions] = useState([]);
+  const [rolesLoading, setRolesLoading] = useState(false);
   const [districtOptions, setDistrictOptions] = useState([]);
   const [districtLoading, setDistrictLoading] = useState(false);
   const [blockOptions, setBlockOptions] = useState([]);
@@ -99,6 +103,36 @@ export default function LoginPage() {
   useEffect(() => {
     if (isAuthenticated) navigate('/admin/dashboard', { replace: true });
   }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
+    const loadRoles = async () => {
+      setRolesLoading(true);
+
+      try {
+        const data = await api.getRoles();
+        console.log('Role API response:', data);
+        const staffRoles = (Array.isArray(data) ? data : []).filter(
+          (role) => String(role.roleName || '').toUpperCase() !== 'STATE_ADMIN'
+        );
+        console.log('Filtered staff roles:', staffRoles);
+        setRoleOptions(staffRoles);
+
+        if (staffRoles.length > 0) {
+          setSignupForm((prev) => ({
+            ...prev,
+            roleId: prev.roleId || String(staffRoles[0].roleId),
+            roleName: prev.roleName || staffRoles[0].roleName,
+          }));
+        }
+      } catch {
+        setRoleOptions([]);
+      } finally {
+        setRolesLoading(false);
+      }
+    };
+
+    loadRoles();
+  }, []);
 
   useEffect(() => {
     const loadDistricts = async () => {
@@ -174,6 +208,18 @@ export default function LoginPage() {
     setSignupMessage('');
   };
 
+  const onRoleChange = (roleId) => {
+    const selectedRole = roleOptions.find((item) => String(item.roleId) === String(roleId));
+    console.log('Selected staff role:', selectedRole);
+    setSignupForm((prev) => ({
+      ...prev,
+      roleId: String(roleId),
+      roleName: selectedRole?.roleName || '',
+    }));
+    setSignupError('');
+    setSignupMessage('');
+  };
+
   const onSignup = async (e) => {
     e.preventDefault();
     setSignupLoading(true);
@@ -182,23 +228,26 @@ export default function LoginPage() {
 
     try {
       const payload = {
-        districtName: signupForm.districtName.trim(),
-        blockName: signupForm.blockName.trim(),
+        roleId: Number(signupForm.roleId) || 0,
+        roleName: signupForm.roleName.trim(),
+        districtId: Number(signupForm.districtId) || 0,
+        blockId: Number(signupForm.blockId) || 0,
         officialName: signupForm.officialName.trim(),
         contactNumber: signupForm.contactNumber.trim(),
         officialEmail: signupForm.officialEmail.trim(),
         designation: signupForm.designation.trim(),
         livelihoodTrackerId: signupForm.livelihoodTrackerId.trim(),
         password: signupForm.password,
-        role: signupForm.role,
       };
 
+      console.log('Signup API payload:', payload);
       await api.signupAdminUser(payload);
       setSignupForm(emptySignupForm);
       setShowSignupPassword(false);
       setSignupMessage('Signup submitted successfully. Please wait for admin approval before login.');
       setActiveTab('login');
     } catch (err) {
+      console.error('Signup API error:', err);
       setSignupError(err?.message || 'Unable to submit signup request.');
     } finally {
       setSignupLoading(false);
@@ -299,8 +348,6 @@ export default function LoginPage() {
                 {activeTab === 'login' ? (
                   <form className="mt-5" onSubmit={onSubmit}>
                     <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">Official Login</div>
-                    <h2 className="mt-3 text-4xl font-black leading-none text-slate-900 md:text-[42px]">Sign In</h2>
-                    <p className="mt-3 max-w-sm text-[14px] leading-7 text-slate-500">Enter your official tracker ID and password. Your role is assigned automatically after login.</p>
 
                     <div className="mt-6 space-y-5">
                       <div>
@@ -356,10 +403,14 @@ export default function LoginPage() {
                     <div className="grid gap-4 md:grid-cols-2">
                       <div>
                         <label className="mb-1 block text-sm font-bold text-slate-700">Staff Type</label>
-                        <select className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100" value={signupForm.role} onChange={(e) => updateSignupField('role', e.target.value)}>
-                          {signupRoleOptions.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
+                        <select
+                          className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-400 focus:ring-4 focus:ring-cyan-100"
+                          value={signupForm.roleId}
+                          onChange={(e) => onRoleChange(e.target.value)}
+                          disabled={rolesLoading}>
+                          {roleOptions.map((option) => (
+                            <option key={option.roleId} value={option.roleId}>
+                              {formatRoleLabel(option.roleName)}
                             </option>
                           ))}
                         </select>

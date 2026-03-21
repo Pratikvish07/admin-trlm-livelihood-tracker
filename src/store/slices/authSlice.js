@@ -108,19 +108,47 @@ const buildPermissions = (role, rawApiRole) => {
   return ['view_dashboard'];
 };
 
+const deriveRoleId = (rawRole, fallbackRole) => {
+  const normalized = String(rawRole || fallbackRole || '').trim().toUpperCase();
+  if (normalized === 'ADMINUSER01' || normalized === 'ADMINUSER02') return 1;
+  if (normalized === 'STATE_ADMIN') return 1;
+  if (normalized === 'DISTRICT_ADMIN') return 2;
+  if (normalized === 'DISTRICT_STAFF') return 2;
+  if (normalized === 'BLOCK_ADMIN') return 3;
+  if (normalized === 'BLOCK_STAFF') return 3;
+  return 0;
+};
+
 const normalizeUser = (userId, response) => {
   const normalizedRole = normalizeRoleFromApi(response?.role);
   const districtValue = String(response?.district || '').toLowerCase() === 'null' ? null : response?.district || null;
   const blockValue = String(response?.block || '').toLowerCase() === 'null' ? null : response?.block || null;
+  const responseRoleId = Number(response?.roleId) || deriveRoleId(response?.role, normalizedRole);
 
   return {
     id: String(userId || response?.userId || '').toUpperCase(),
     name: String(userId || response?.officialName || response?.userId || '').toUpperCase(),
+    roleId: responseRoleId,
     role: normalizedRole,
     apiRole: response?.role || normalizedRole,
     district: districtValue,
     block: blockValue,
     permissions: buildPermissions(normalizedRole, response?.role),
+  };
+};
+
+const normalizePersistedUser = (user) => {
+  if (!user) return null;
+
+  const normalizedRole = normalizeRoleFromApi(user?.apiRole || user?.role);
+  const apiRole = user?.apiRole || user?.role || normalizedRole;
+
+  return {
+    ...user,
+    roleId: Number(user?.roleId) || deriveRoleId(apiRole, normalizedRole),
+    role: normalizedRole,
+    apiRole,
+    permissions: buildPermissions(normalizedRole, apiRole),
   };
 };
 
@@ -156,6 +184,7 @@ export const loginWithCredentials = createAsyncThunk(
         token: auth.token,
         user: {
           ...auth.user,
+          roleId: Number(auth.user?.roleId) || deriveRoleId(auth.user?.role),
           role: normalizeRoleFromApi(auth.user?.role),
           apiRole: auth.user?.role,
           permissions: buildPermissions(normalizeRoleFromApi(auth.user?.role), auth.user?.role),
@@ -179,7 +208,7 @@ const persistedWorkflow = loadWorkflowState();
 const persistedSession = loadAuthSession();
 
 const initialState = {
-  user: persistedSession.user,
+  user: normalizePersistedUser(persistedSession.user),
   token: persistedSession.token || '',
   isAuthenticated: Boolean(persistedSession.token),
   error: null,
@@ -293,7 +322,7 @@ const authSlice = createSlice({
       persistWorkflowState(state);
     },
     setUser: (state, action) => {
-      state.user = action.payload?.user || action.payload || null;
+      state.user = normalizePersistedUser(action.payload?.user || action.payload || null);
       state.token = action.payload?.token || state.token;
       state.isAuthenticated = !!state.token || !!state.user;
       state.error = null;
